@@ -1,4 +1,4 @@
-name: Push-to-EC2 instance
+name: Deploy to EC2
 
 on:
   push:
@@ -7,14 +7,14 @@ on:
 
 jobs:
   deploy:
-    name: Push to EC2
+    name: Deploy to EC2
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout the code
-        uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Execute remote SSH commands using password
+      - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: 13.201.51.229
@@ -23,8 +23,84 @@ jobs:
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
           script: |
-            cd cicd
-            git pull
-            npm install
+            #!/bin/bash
+            set -e
+
+            # Load all possible Node.js paths and environments
+            export PATH=$HOME/.local/bin:$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin:$PATH
+
+            # Source all possible profile files
+            [ -f ~/.bashrc ] && source ~/.bashrc
+            [ -f ~/.bash_profile ] && source ~/.bash_profile  
+            [ -f ~/.profile ] && source ~/.profile
+
+            # Load NVM if it exists
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+            [ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
+
+            # If NVM is loaded, use the default node version
+            if command -v nvm >/dev/null 2>&1; then
+                nvm use default 2>/dev/null || nvm use node 2>/dev/null || true
+            fi
+
+            # Verify Node.js and npm are available
+            echo "Checking Node.js installation..."
+            if ! command -v node >/dev/null 2>&1; then
+                echo "ERROR: Node.js not found in PATH"
+                echo "Current PATH: $PATH"
+                exit 1
+            fi
+
+            if ! command -v npm >/dev/null 2>&1; then
+                echo "ERROR: npm not found in PATH" 
+                echo "Current PATH: $PATH"
+                exit 1
+            fi
+
+            echo "✓ Node.js version: $(node --version)"
+            echo "✓ npm version: $(npm --version)"
+
+            # Navigate to project directory
+            echo "Navigating to project directory..."
+            cd cicd || { echo "ERROR: cicd directory not found"; exit 1; }
+            echo "✓ Current directory: $(pwd)"
+
+            # Pull latest changes
+            echo "Pulling latest changes from git..."
+            git pull origin main
+            echo "✓ Git pull completed"
+
+            # Install dependencies
+            echo "Installing npm dependencies..."
+            npm ci --only=production 2>/dev/null || npm install
+            echo "✓ Dependencies installed"
+
+            # Build the project
+            echo "Building the project..."
             npm run build
-            npm run start
+            echo "✓ Build completed"
+
+            # Stop existing processes
+            echo "Stopping existing processes..."
+            pkill -f "npm.*start" 2>/dev/null || true
+            pkill -f "node.*next" 2>/dev/null || true
+            sleep 2
+            echo "✓ Existing processes stopped"
+
+            # Start the application in background
+            echo "Starting the application..."
+            nohup npm run start > ~/cicd/app.log 2>&1 &
+
+            # Wait and verify the process started
+            sleep 5
+            if pgrep -f "npm.*start" >/dev/null || pgrep -f "node.*next" >/dev/null; then
+                echo "✓ Application started successfully!"
+                echo "✓ Process ID: $(pgrep -f "npm.*start" || pgrep -f "node.*next")"
+            else
+                echo "WARNING: Could not verify if application started"
+                echo "Last 10 lines of application log:"
+                tail -n 10 ~/cicd/app.log 2>/dev/null || echo "No log file found"
+            fi
+
+            echo "🎉 Deployment completed successfully!"
