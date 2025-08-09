@@ -22,4 +22,4 @@ jobs:
           key: ${{ secrets.MY_SSH_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           port: 22
-          script: whoami
+          script: ls
