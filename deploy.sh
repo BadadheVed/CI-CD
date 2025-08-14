@@ -1,9 +1,6 @@
-#!/bin/bash
 
-# deploy.sh - Deployment script for Next.js application
-# Usage: ./deploy.sh
 
-set -e  # Exit on any error
+set -e  
 
 echo "🚀 Starting deployment process..."
 
